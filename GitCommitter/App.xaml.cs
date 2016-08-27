@@ -36,7 +36,7 @@ namespace GitCommitter
                 var settingsText = File.ReadAllText(exeDir + "watchDirs.json");
                 tmpWatchFolderList = JsonConvert.DeserializeObject<List<WatchFolderInfo>>(settingsText);
             }
-            catch (Exception)
+            catch (FileNotFoundException)
             {
                 tmpWatchFolderList = new List<WatchFolderInfo>();
             }
@@ -58,6 +58,7 @@ namespace GitCommitter
             notifyIcon.Dispose(); //the icon would clean up automatically, but this is cleaner
             var settingsText = JsonConvert.SerializeObject(WatchFolders);
             File.WriteAllText(exeDir + "watchDirs.json", settingsText);
+            WatchFolders.ToList().ForEach(x => x.Committer.Quit());
             base.OnExit(e);
         }
 

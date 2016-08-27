@@ -37,6 +37,7 @@ namespace GitCommitter
             fileWatcher.NotifyFilter = NotifyFilters.LastWrite | NotifyFilters.FileName
                 | NotifyFilters.DirectoryName | NotifyFilters.CreationTime;
             fileWatcher.IncludeSubdirectories = true;
+            fileWatcher.EnableRaisingEvents = true;
             fileWatcher.Changed += FileWatcher_Changed;
             fileWatcher.Created += FileWatcher_Changed;
             fileWatcher.Deleted += FileWatcher_Changed;
@@ -66,31 +67,6 @@ namespace GitCommitter
 
         #region Private Methods
 
-        private static void RunProc(ProcessStartInfo procInfo)
-        {
-            RunProc(procInfo, false);
-        }
-
-        private static void RunProc(ProcessStartInfo procInfo, bool logoutput)
-        {
-            if (logoutput)
-            {
-                procInfo.RedirectStandardOutput = true;
-                procInfo.RedirectStandardError = true;
-                procInfo.UseShellExecute = false;
-            }
-            procInfo.WindowStyle = ProcessWindowStyle.Hidden;
-            var proc = new Process();
-            proc.StartInfo = procInfo;
-            proc.Start();
-            if (logoutput)
-            {
-                File.WriteAllText($"{exeDir}output{outputNum++}.log", proc.StandardOutput.ReadToEnd());
-                File.WriteAllText($"{exeDir}outputerror{outputNum++}.log", proc.StandardError.ReadToEnd());
-            }
-            proc.WaitForExit();
-        }
-
         private void DoWatch()
         {
             RunGit();
@@ -107,13 +83,14 @@ namespace GitCommitter
                     Thread.Sleep(Delay);
                     continue;
                 }
+                changes = false;
                 RunGit();
             }
         }
 
         private void FileWatcher_Changed(object sender, FileSystemEventArgs e)
         {
-            if (e.FullPath.Contains(".git/"))
+            if (e.FullPath.Contains(".git/") || e.FullPath.Contains(".git\\") || e.FullPath.EndsWith(".git"))
             {
                 return;
             }
@@ -133,10 +110,39 @@ namespace GitCommitter
             var repo = new LibGit2Sharp.Repository(path);
             var branch = repo.Refs.Head.TargetIdentifier.Replace("refs/heads/", "");
             ProcessStartInfo procInfoWipSave = new ProcessStartInfo("git", $@"wip save ""{DateTime.Now.ToLongDateString() + " " + DateTime.Now.ToLongTimeString()}"" -u -e");
-            ProcessStartInfo procInfoPush = new ProcessStartInfo("git", $"push wip wip/{branch}:master");
+            ProcessStartInfo procInfoPush = new ProcessStartInfo("git", $"push wipremote refs/wip/{branch}:master -f");
 
             RunProc(procInfoWipSave);
             RunProc(procInfoPush, true);
+        }
+
+        private void RunProc(ProcessStartInfo procInfo)
+        {
+            RunProc(procInfo, false);
+        }
+
+        private void RunProc(ProcessStartInfo procInfo, bool logoutput)
+        {
+            if (logoutput)
+            {
+                procInfo.RedirectStandardOutput = true;
+                procInfo.RedirectStandardError = true;
+                procInfo.UseShellExecute = false;
+            }
+            procInfo.WindowStyle = ProcessWindowStyle.Hidden;
+            procInfo.CreateNoWindow = true;
+            procInfo.WorkingDirectory = path;
+            var proc = new Process();
+            proc.StartInfo = procInfo;
+            proc.Start();
+            if (logoutput)
+            {
+                File.WriteAllText($"{exeDir}output{outputNum++}.log", proc.StandardOutput.ReadToEnd());
+                File.WriteAllText($"{exeDir}outputerror{outputNum++}.log", proc.StandardError.ReadToEnd());
+            }
+            proc.WaitForExit();
+            var runTime = proc.ExitTime - proc.StartTime;
+            Console.WriteLine($"Completed in {runTime}: {procInfo.FileName} {procInfo.Arguments}");
         }
 
         #endregion Private Methods

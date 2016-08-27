@@ -1,4 +1,6 @@
-﻿namespace GitCommitter
+﻿using Newtonsoft.Json;
+
+namespace GitCommitter
 {
     public class WatchFolderInfo : NotifyPropertyChanged
     {
@@ -34,14 +36,11 @@
             set
             {
                 active = value;
-                if (!Valid)
-                {
-                    active = false;
-                }
                 OnPropertyChanged();
             }
         }
 
+        [JsonIgnore]
         public GitAutoCommitter Committer
         {
             get
@@ -94,11 +93,12 @@
             }
         }
 
+        [JsonIgnore]
         public bool Valid
         {
             get
             {
-                return !string.IsNullOrWhiteSpace(Name) && !string.IsNullOrWhiteSpace(Path);
+                return !(string.IsNullOrWhiteSpace(Name) || string.IsNullOrWhiteSpace(Path));
             }
         }
 
@@ -113,7 +113,7 @@
                 committer.Quit();
                 committer = null;
             }
-            if (active)
+            if (Valid && Active)
             {
                 committer = new GitAutoCommitter(path, filter);
             }
