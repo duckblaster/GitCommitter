@@ -3,6 +3,7 @@ using System.Diagnostics;
 using System.IO;
 using System.Reflection;
 using System.Threading;
+using System.Threading.Tasks;
 
 namespace GitCommitter
 {
@@ -18,12 +19,14 @@ namespace GitCommitter
         private DateTime lastChange = DateTime.UtcNow;
         private bool quit;
         private Thread workerThread;
+        private object lockObject = new object();
+        private bool running;
 
         #endregion Private Fields
 
         #region Public Constructors
 
-        public GitAutoCommitter(string dir, string filter)
+        public GitAutoCommitter(string dir, string filter, int delay)
         {
             path = dir;
             if (string.IsNullOrWhiteSpace(filter))
@@ -42,7 +45,7 @@ namespace GitCommitter
             fileWatcher.Created += FileWatcher_Changed;
             fileWatcher.Deleted += FileWatcher_Changed;
             fileWatcher.Renamed += FileWatcher_Changed;
-            Delay = TimeSpan.FromSeconds(1);
+            Delay = TimeSpan.FromSeconds(delay);
             workerThread = new Thread(DoWatch);
             workerThread.Start();
         }
@@ -78,7 +81,7 @@ namespace GitCommitter
                     Thread.Sleep(Delay - difference);
                     continue;
                 }
-                if (!changes)
+                if (!changes || running)
                 {
                     Thread.Sleep(Delay);
                     continue;
@@ -112,8 +115,22 @@ namespace GitCommitter
             ProcessStartInfo procInfoWipSave = new ProcessStartInfo("git", $@"wip save ""{DateTime.Now.ToLongDateString() + " " + DateTime.Now.ToLongTimeString()}"" -u -e");
             ProcessStartInfo procInfoPush = new ProcessStartInfo("git", $"push wipremote refs/wip/{branch}:master -f");
 
-            RunProc(procInfoWipSave);
-            RunProc(procInfoPush, true);
+            Task.Run(() =>
+            {
+                lock (lockObject)
+                {
+                    running = true;
+                    try
+                    {
+                        RunProc(procInfoWipSave);
+                        RunProc(procInfoPush, true);
+                    }
+                    finally
+                    {
+                        running = false;
+                    }
+                }
+            });
         }
 
         private void RunProc(ProcessStartInfo procInfo)

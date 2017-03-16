@@ -97,6 +97,9 @@
                 <DataGridTextColumn x:Name="nameColumn"
                                     Binding="{Binding Name}"
                                     Header="Name" />
+                <DataGridTextColumn x:Name="delayColumn"
+                                    Binding="{Binding Delay}"
+                                    Header="Delay" />
                 <DataGridTextColumn x:Name="filterColumn"
                                     Binding="{Binding Filter}"
                                     Header="Filter" />

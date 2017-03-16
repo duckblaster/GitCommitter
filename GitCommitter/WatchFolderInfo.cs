@@ -10,9 +10,10 @@ namespace GitCommitter
 
         private GitAutoCommitter committer;
 
-        private string filter;
+        private string filter = "*.*";
         private string name;
         private string path;
+        private int delay = 10;
 
         #endregion Private Fields
 
@@ -80,6 +81,19 @@ namespace GitCommitter
             }
         }
 
+        public int Delay
+        {
+            get
+            {
+                return delay;
+            }
+            set
+            {
+                delay = value;
+                OnPropertyChanged();
+            }
+        }
+
         public string Path
         {
             get
@@ -115,7 +129,7 @@ namespace GitCommitter
             }
             if (Valid && Active)
             {
-                committer = new GitAutoCommitter(path, filter);
+                committer = new GitAutoCommitter(path, filter, delay);
             }
         }
 

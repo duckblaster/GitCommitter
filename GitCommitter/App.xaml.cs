@@ -55,10 +55,10 @@ namespace GitCommitter
 
         protected override void OnExit(ExitEventArgs e)
         {
-            notifyIcon.Dispose(); //the icon would clean up automatically, but this is cleaner
             var settingsText = JsonConvert.SerializeObject(WatchFolders);
             File.WriteAllText(exeDir + "watchDirs.json", settingsText);
             WatchFolders.ToList().ForEach(x => x.Committer.Quit());
+            notifyIcon.Dispose(); //the icon would clean up automatically, but this is cleaner
             base.OnExit(e);
         }
 
