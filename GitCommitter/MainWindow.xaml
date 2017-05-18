@@ -103,6 +103,12 @@
                 <DataGridTextColumn x:Name="filterColumn"
                                     Binding="{Binding Filter}"
                                     Header="Filter" />
+                <DataGridTextColumn x:Name="branchColumn"
+                                    Binding="{Binding Branch}"
+                                    Header="Branch" />
+                <DataGridTextColumn x:Name="remoteColumn"
+                                    Binding="{Binding Remote}"
+                                    Header="Remote" />
                 <DataGridTemplateColumn x:Name="pathColumn"
                                         CellEditingTemplate="{StaticResource EditingPathTemplate}"
                                         CellTemplate="{StaticResource PathTemplate}"

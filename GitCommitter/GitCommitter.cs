@@ -2,6 +2,7 @@
 using System.Diagnostics;
 using System.IO;
 using System.Reflection;
+using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -9,34 +10,29 @@ namespace GitCommitter
 {
     public class GitAutoCommitter
     {
-        #region Private Fields
-
         private static readonly string exeDir = Directory.GetParent(Assembly.GetEntryAssembly().Location) + "\\";
         private static int outputNum;
+        private readonly string filter;
+        private readonly string name;
         private readonly string path;
+        private readonly string remote;
+        private readonly string remoteBranch;
         private bool changes;
         private FileSystemWatcher fileWatcher;
         private DateTime lastChange = DateTime.UtcNow;
-        private bool quit;
-        private Thread workerThread;
         private object lockObject = new object();
+        private bool quit;
         private bool running;
+        private Thread workerThread;
 
-        #endregion Private Fields
-
-        #region Public Constructors
-
-        public GitAutoCommitter(string dir, string filter, int delay)
+        public GitAutoCommitter(string name, string dir, string filter, int delay, string branch, string remote)
         {
+            this.name = name;
             path = dir;
-            if (string.IsNullOrWhiteSpace(filter))
-            {
-                fileWatcher = new FileSystemWatcher(dir);
-            }
-            else
-            {
-                fileWatcher = new FileSystemWatcher(dir, filter);
-            }
+            remoteBranch = branch;
+            this.remote = remote;
+            fileWatcher = new FileSystemWatcher(dir);
+            this.filter = filter;
             fileWatcher.NotifyFilter = NotifyFilters.LastWrite | NotifyFilters.FileName
                 | NotifyFilters.DirectoryName | NotifyFilters.CreationTime;
             fileWatcher.IncludeSubdirectories = true;
@@ -50,29 +46,16 @@ namespace GitCommitter
             workerThread.Start();
         }
 
-        #endregion Public Constructors
-
-        #region Public Properties
-
         public static string GitPath { get; set; }
         public TimeSpan Delay { get; set; }
-
-        #endregion Public Properties
-
-        #region Public Methods
 
         public void Quit()
         {
             quit = true;
         }
 
-        #endregion Public Methods
-
-        #region Private Methods
-
         private void DoWatch()
         {
-            RunGit();
             while (!quit)
             {
                 var difference = DateTime.UtcNow - lastChange;
@@ -110,10 +93,11 @@ namespace GitCommitter
 
         private void RunGit()
         {
+            NotifyIconViewModel.Current.CurrentApp.ShowBalloonTip(name, "Commiting changes", Hardcodet.Wpf.TaskbarNotification.BalloonIcon.None);
             var repo = new LibGit2Sharp.Repository(path);
             var branch = repo.Refs.Head.TargetIdentifier.Replace("refs/heads/", "");
-            ProcessStartInfo procInfoWipSave = new ProcessStartInfo("git", $@"wip save ""{DateTime.Now.ToLongDateString() + " " + DateTime.Now.ToLongTimeString()}"" -u -e");
-            ProcessStartInfo procInfoPush = new ProcessStartInfo("git", $"push wipremote refs/wip/{branch}:master -f");
+            var now = DateTime.Now;
+            var doPush = !string.IsNullOrEmpty(remoteBranch) && !string.IsNullOrEmpty(remote);
 
             Task.Run(() =>
             {
@@ -122,8 +106,16 @@ namespace GitCommitter
                     running = true;
                     try
                     {
-                        RunProc(procInfoWipSave);
-                        RunProc(procInfoPush, true);
+                        var result = RunProc("git", $"wip save \"{now.ToLongDateString()} {now.ToLongTimeString()}\" -u", true);
+                        if (doPush)
+                        {
+                            var localBranch = $"refs/wip/{branch}";
+                            if (result.Item2.Replace("\r", "").Contains("no changes\n"))
+                            {
+                                localBranch = branch;
+                            }
+                            RunProc("git", $"push {remote} {localBranch}:{remoteBranch} -f", true);
+                        }
                     }
                     finally
                     {
@@ -133,35 +125,79 @@ namespace GitCommitter
             });
         }
 
-        private void RunProc(ProcessStartInfo procInfo)
+        private Tuple<string, string> RunProc(string filename, string arguments, bool logOutput)
         {
-            RunProc(procInfo, false);
-        }
-
-        private void RunProc(ProcessStartInfo procInfo, bool logoutput)
-        {
-            if (logoutput)
+            var timeout = (int)(TimeSpan.FromMinutes(10).TotalMilliseconds);
+            using (AutoResetEvent outputWaitHandle = new AutoResetEvent(false))
+            using (AutoResetEvent errorWaitHandle = new AutoResetEvent(false))
+            using (Process process = new Process())
             {
-                procInfo.RedirectStandardOutput = true;
-                procInfo.RedirectStandardError = true;
-                procInfo.UseShellExecute = false;
-            }
-            procInfo.WindowStyle = ProcessWindowStyle.Hidden;
-            procInfo.CreateNoWindow = true;
-            procInfo.WorkingDirectory = path;
-            var proc = new Process();
-            proc.StartInfo = procInfo;
-            proc.Start();
-            if (logoutput)
-            {
-                File.WriteAllText($"{exeDir}output{outputNum++}.log", proc.StandardOutput.ReadToEnd());
-                File.WriteAllText($"{exeDir}outputerror{outputNum++}.log", proc.StandardError.ReadToEnd());
-            }
-            proc.WaitForExit();
-            var runTime = proc.ExitTime - proc.StartTime;
-            Console.WriteLine($"Completed in {runTime}: {procInfo.FileName} {procInfo.Arguments}");
-        }
+                process.StartInfo.FileName = filename;
+                process.StartInfo.Arguments = arguments;
+                process.StartInfo.UseShellExecute = false;
+                process.StartInfo.RedirectStandardOutput = true;
+                process.StartInfo.RedirectStandardError = true;
+                process.StartInfo.WindowStyle = ProcessWindowStyle.Hidden;
+                process.StartInfo.CreateNoWindow = true;
+                process.StartInfo.WorkingDirectory = path;
 
-        #endregion Private Methods
+                StringBuilder output = new StringBuilder();
+                StringBuilder error = new StringBuilder();
+                DataReceivedEventHandler outputHandler = (sender, e) =>
+                {
+                    if (e.Data == null)
+                    {
+                        outputWaitHandle.Set();
+                    }
+                    else
+                    {
+                        output.AppendLine(e.Data);
+                    }
+                };
+                DataReceivedEventHandler errorHandler = (sender, e) =>
+                {
+                    if (e.Data == null)
+                    {
+                        errorWaitHandle.Set();
+                    }
+                    else
+                    {
+                        error.AppendLine(e.Data);
+                    }
+                };
+                process.OutputDataReceived += outputHandler;
+                process.ErrorDataReceived += errorHandler;
+
+                Console.WriteLine($"Starting: {filename} {arguments}");
+                process.Start();
+
+                process.BeginOutputReadLine();
+                process.BeginErrorReadLine();
+
+                process.WaitForExit();
+
+                process.OutputDataReceived -= outputHandler;
+                process.ErrorDataReceived -= errorHandler;
+
+                var outputText = output.ToString();
+                var errorText = error.ToString();
+
+                if (logOutput)
+                {
+                    var outputId = outputNum++;
+                    if (outputText.Length > 0)
+                    {
+                        File.WriteAllText($"{exeDir}output-{outputId}.log", outputText);
+                    }
+                    if (errorText.Length > 0)
+                    {
+                        File.WriteAllText($"{exeDir}output-{outputId}-error.log", errorText);
+                    }
+                }
+                var runTime = process.ExitTime - process.StartTime;
+                Console.WriteLine($"Completed in {runTime}: {filename} {arguments}");
+                return new Tuple<string, string>(outputText, errorText);
+            }
+        }
     }
 }

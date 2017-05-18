@@ -13,6 +13,8 @@ namespace GitCommitter
         private string filter = "*.*";
         private string name;
         private string path;
+        private string branch;
+        private string remote;
         private int delay = 10;
 
         #endregion Private Fields
@@ -107,6 +109,32 @@ namespace GitCommitter
             }
         }
 
+        public string Branch
+        {
+            get
+            {
+                return branch;
+            }
+            set
+            {
+                branch = value;
+                OnPropertyChanged();
+            }
+        }
+
+        public string Remote
+        {
+            get
+            {
+                return remote;
+            }
+            set
+            {
+                remote = value;
+                OnPropertyChanged();
+            }
+        }
+
         [JsonIgnore]
         public bool Valid
         {
@@ -129,7 +157,7 @@ namespace GitCommitter
             }
             if (Valid && Active)
             {
-                committer = new GitAutoCommitter(path, filter, delay);
+                committer = new GitAutoCommitter(name, path, filter, delay, branch, remote);
             }
         }
 
